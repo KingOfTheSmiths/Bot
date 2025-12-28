@@ -4,6 +4,7 @@ from io import BytesIO  # récupération de PP + bannière
 from discord import Guild, TextChannel
 from discord.commands.context import ApplicationContext
 from discord.ext import commands
+from dotenv import dotenv_values
 from GoloBot.UI import *
 
 from template import TemplateKOTSmith
