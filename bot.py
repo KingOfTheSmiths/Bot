@@ -4,13 +4,34 @@ from io import BytesIO  # récupération de PP + bannière
 from discord import Guild, TextChannel
 from discord.commands.context import ApplicationContext
 from discord.ext import commands
-from dotenv import dotenv_values
+from GoloBot.UI import *
 
 from template import TemplateKOTSmith
 from wows import *
 
 path = '/'.join(__file__.split('/')[:-1]) + '/'
 config = DictPasPareil(casse=True, **dotenv_values(path + '.env'))
+
+TEAM_PREFIX = '.'
+
+
+def update_prefix(new_prefix: str):
+    global TEAM_PREFIX
+    to_del = []
+    for team, data in Database('teams.json').items():
+        if team.startswith(TEAM_PREFIX):
+            to_del.append(team)
+            new_name = f"{new_prefix}{team[len(TEAM_PREFIX):]}"
+            self.bot.teams[new_name] = data
+    for stuff in to_del:
+        del self.bot.teams[stuff]
+    TEAM_PREFIX = new_prefix
+
+
+def format_with_prefix(name) -> str:
+    if not isinstance(name, str) or not name.startswith(TEAM_PREFIX):
+        name = f"{TEAM_PREFIX}{name}"
+    return name
 
 
 class KingOfTheSmiths(TemplateKOTSmith):
@@ -58,19 +79,6 @@ class KingOfTheSmiths(TemplateKOTSmith):
 class Inscriptions(commands.Cog):
     def __init__(self, bot: KingOfTheSmiths):
         self.bot = bot
-        self.team_prefix = "Team "
-        self.update_prefix("_")
-
-    def update_prefix(self, new_prefix: str):
-        to_del = []
-        for team, data in self.bot.teams.items():
-            if team.startswith(self.team_prefix):
-                to_del.append(team)
-                new_name = f"{new_prefix}{team[len(self.team_prefix):]}"
-                self.bot.teams[new_name] = data
-        for stuff in to_del:
-            del self.bot.teams[stuff]
-        self.team_prefix = new_prefix
 
     @commands.slash_command(name="toggle_inscription",
                             description="(Dés)Active la possibilité de s'inscrire")
@@ -82,52 +90,57 @@ class Inscriptions(commands.Cog):
         access = {True: 'ouvertes', False: 'fermées'}
         await ctx.respond(f"Les inscriptions sont désormais {access[not etat]}.")
 
-    @commands.slash_command(name="inscription", description="S'inscrire.")
+    @commands.slash_command(name="inscription",
+                            description="S'inscrire. Il faut renseigner 5 joueurs et au moins 1 compte discord.")
     @discord.option("nom", description="Nom de l'équipe", required=True)
     @discord.option("joueur1", description="Pseudo, ID ou wows-numbers du joueur 1", required=True)
     @discord.option("joueur2", description="Pseudo, ID ou wows-numbers du joueur 2", required=True)
     @discord.option("joueur3", description="Pseudo, ID ou wows-numbers du joueur 3", required=True)
     @discord.option("joueur4", description="Pseudo, ID ou wows-numbers du joueur 4", required=True)
     @discord.option("joueur5", description="Pseudo, ID ou wows-numbers du joueur 5", required=True)
-    @discord.option("discord1", description="Discord du joueur 1", required=True)
     @discord.option("discord2", description="Discord du joueur 2", required=False)
     @discord.option("discord3", description="Discord du joueur 3", required=False)
     @discord.option("discord4", description="Discord du joueur 4", required=False)
     @discord.option("discord5", description="Discord du joueur 5", required=False)
     async def inscription(self, ctx: ApplicationContext, nom: str,
                           joueur1: str, joueur2: str, joueur3: str, joueur4: str, joueur5: str,
-                          discord1: discord.Member, discord2: discord.Member = None, discord3: discord.Member = None,
+                          discord2: discord.Member = None, discord3: discord.Member = None,
                           discord4: discord.Member = None, discord5: discord.Member = None):
         await ctx.defer(ephemeral=True)
         if not self.bot.teams[self.bot.open_register]:
             await ctx.respond("Les inscriptions sont actuellement fermées.")
             return
-        if not isinstance(nom, str) or not nom.startswith(self.team_prefix):
-            nom = f"{self.team_prefix}{nom}"
+        nom = format_with_prefix(nom)
+        if nom in self.bot.teams:
+            await ctx.respond(f"L'équipe **{nom}** est déjà inscrite.")
+            return
         joueurs = [joueur1, joueur2, joueur3, joueur4, joueur5]
-        discords = [discord1, discord2, discord3, discord4, discord5]
+        discords = [ctx.user, discord2, discord3, discord4, discord5]
         players = {}
         async with ClientSession() as session:
             for i, joueur in enumerate(joueurs):
-                if 'wows-numbers' in joueur:
-                    if not joueur.startswith('https://'):
-                        joueur = f"https://{joueur}"
+                if joueur.startswith('wows-numbers.com'):
+                    joueur = f"https://{joueur}"
+                if joueur.startswith('https://wows-numbers.com'):
                     player = await Player.from_wows_numbers(config.WARGAMING_API, joueur, session)
                 else:
                     player = await Player(config.WARGAMING_API, joueur).load(session)
                 players[player.id] = {
                     'name': player.name,
-                    'discord': None if not hasattr(discords[i], 'id') else discords[i].id
+                    'discord': None if not hasattr(discords[i], 'id') else discords[i].id,
+                    'leader': i == 0
                 }
         if len(players) < 5:
             await ctx.respond("Il faut au moins 5 joueurs différents pour s'inscrire.\n"
                               "Les joueurs comptabilisés sont : "
                               + ', '.join(info['name'] for info in players.values()))
             return
-        self.bot.teams[nom] = players
+        self.bot.teams[nom] = {'validee': False, 'members': players}
         embed = await ctx.invoke(self.list_team, nom=nom)
         if isinstance(embed, discord.Embed):
-            await self.bot.log_inscriptions.send("Nouvelle équipe inscrite", embed=embed)
+            await self.bot.log_inscriptions.send("Nouvelle équipe inscrite",
+                                                 embed=embed,
+                                                 view=InscriptionView(self.bot, nom))
 
     @commands.slash_command(name="list_team", description="Liste les membres d'une équipe.")
     @discord.option("nom", description="Nom de l'équipe", required=True)
@@ -136,16 +149,16 @@ class Inscriptions(commands.Cog):
             await ctx.defer(ephemeral=True)
         except:
             pass
-        if not isinstance(nom, str) or not nom.startswith(self.team_prefix):
-            nom = f"{self.team_prefix}{nom}"
+        nom = format_with_prefix(nom)
         if nom not in self.bot.teams:
             await ctx.respond(f"L'équipe **{nom}** n'existe pas.")
             print(', '.join([f"{k} {type(k)}" for k in self.bot.teams.keys()]))
             return None
         team_data = self.bot.teams[nom]
-        embed = GBEmbed(title=f"Membres de l'équipe {nom[len(self.team_prefix):]}")
+        embed = GBEmbed(title=f"Membres de l'équipe {nom[len(TEAM_PREFIX):]}")
+        embed.description = f"Candidature validée : {'oui' if team_data['validee'] else 'non'}"
         joueurs = ''
-        for player_id, info in team_data.items():
+        for player_id, info in team_data['members'].items():
             joueurs += f"- {info['name']}"
             if info['discord']:
                 joueurs += f" - <@{info['discord']}>"
@@ -163,8 +176,80 @@ class Inscriptions(commands.Cog):
             return
         embed = GBEmbed(title="Équipes inscrites",
                         description="Vous pouvez voir la liste des joueurs d'une équipe avec </list_team:1454840321291849836>")
-        embed.add_field(name="Équipes", value='\n'.join(f"- {team[len(self.team_prefix):]}" for team in teams))
+        embed.add_field(name="Équipes", value='\n'.join(f"- {team[len(TEAM_PREFIX):]}" for team in teams))
         await ctx.respond(embed=embed)
+
+
+class BoutonAcceptInscription(GButton):
+    def __init__(self, bot: KingOfTheSmiths, team_name: str, *args, **kwargs):
+        super().__init__(bot, *args, **kwargs)
+        self.name = team_name
+
+    async def callback(self, interaction: Interaction):
+        if not interaction.guild.id == 1448770816631115790:
+            return
+        team = self.bot.teams[self.name]
+        if team['validee']:
+            await interaction.response.send_message("Cette candidature a déjà été acceptée", ephemeral=True)
+            return
+        team['validee'] = True
+        await interaction.response.send_message("Candidature acceptée", ephemeral=True)
+        embed = interaction.message.embeds[0]
+        embed.description = f"Acceptée par {interaction.user.mention}"
+        embed.colour = discord.Color.green()
+        await interaction.message.edit(content=None, embed=embed, view=None)
+        representant = await self.bot.guild.fetch_role(1450213010798022768)
+        participant = await self.bot.guild.fetch_role(1448776038896111647)
+        members = [m for m in team['members'].values()]
+        for db_member in members:
+            if db_member['discord'] is None:
+                continue
+            try:
+                member: discord.Member = await self.bot.guild.fetch_member(db_member['discord'])
+                await member.add_roles(participant)
+                if db_member['leader']:
+                    await member.add_roles(representant)
+                    message = f"Votre équipe **{self.name[len(TEAM_PREFIX):]}** a été acceptée pour le **{self.bot.user.name}**"
+                    await member.send(message)
+            except Exception as e:
+                print(e)
+
+
+class BoutonRefusInscription(GButton):
+    def __init__(self, bot: KingOfTheSmiths, team_name: str, *args, **kwargs):
+        super().__init__(bot, *args, **kwargs)
+        self.name = team_name
+
+    async def callback(self, interaction: Interaction):
+        if not interaction.guild.id == 1448770816631115790:
+            return
+        team = self.bot.teams[self.name]
+        if team['validee']:
+            await interaction.response.send_message("Cette candidature a déjà été acceptée", ephemeral=True)
+            return
+        members = [m for m in team['members'].values() if m['leader']]
+        del self.bot.teams[self.name]
+        await interaction.response.send_message("Candidature refusée", ephemeral=True)
+        embed = interaction.message.embeds[0]
+        embed.description = f"Refusée par {interaction.user.mention}"
+        embed.colour = discord.Color.red()
+        await interaction.message.edit(content=None, embed=embed, view=None)
+        for member in members:
+            if member['leader']:
+                try:
+                    user = await self.bot.fetch_user(member['discord'])
+                    message = f"Votre équipe **{self.name[len(TEAM_PREFIX):]}** n'a pas été acceptée pour le **{self.bot.user.name}**"
+                    await user.send(message)
+                except:
+                    pass
+
+
+class InscriptionView(GBView):
+    def __init__(self, bot: TemplateKOTSmith, team_name: str, *args, **kwargs):
+        kwargs['timeout'] = None
+        super().__init__(bot, *args, **kwargs)
+        self.add_item(BoutonAcceptInscription(bot, team_name, label="Accepter", style=discord.ButtonStyle.success))
+        self.add_item(BoutonRefusInscription(bot, team_name, label="Refuser", style=discord.ButtonStyle.danger))
 
 
 if __name__ == "__main__":
