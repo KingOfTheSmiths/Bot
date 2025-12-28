@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from io import BytesIO  # récupération de PP + bannière
+
 from discord import Guild, TextChannel
 from discord.commands.context import ApplicationContext
 from discord.ext import commands
@@ -30,7 +32,25 @@ class KingOfTheSmiths(TemplateKOTSmith):
     async def on_ready(self):
         self.guild = await self.fetch_guild(1448770816631115790)
         self.log_inscriptions = await self.guild.fetch_channel(1450211194320453692)
-        print(self.log_inscriptions)
+
+        # Nom, PP et Bannière
+        kwargs = {'username': self.guild.name}
+        async with ClientSession() as session:
+            async with session.get(self.guild.icon.url) as resp:
+                img = await resp.read()
+                with BytesIO(img) as file:
+                    kwargs['avatar'] = file.getvalue()
+            # async with session.get(self.guild.banner.url) as resp:
+            #     img = await resp.read()
+            #     with BytesIO(img) as file:
+            #         kwargs['banner'] = file.getvalue()
+        await self.user.edit(**kwargs)
+
+        # Message de statut du bot
+        activity = discord.Activity(name=self.guild.name,
+                                    type=discord.ActivityType.watching)
+        await self.change_presence(activity=activity)
+
         print(f'Connecté en tant que {self.user} (ID: {self.user.id})')
         print(self.invite)
 
