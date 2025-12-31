@@ -4,7 +4,6 @@ from io import BytesIO  # récupération de PP + bannière
 from discord import Guild, TextChannel
 from discord.commands.context import ApplicationContext
 from discord.ext import commands
-from dotenv import dotenv_values
 from GoloBot.UI import *
 
 from template import TemplateKOTSmith
@@ -47,6 +46,7 @@ class KingOfTheSmiths(TemplateKOTSmith):
             self.teams[self.open_register] = False
 
         self.add_cog(Inscriptions(self))
+        self.add_cog(General(self))
 
         self.guild: Guild = None
         self.log_inscriptions: TextChannel = None
@@ -75,6 +75,17 @@ class KingOfTheSmiths(TemplateKOTSmith):
 
         print(f'Connecté en tant que {self.user} (ID: {self.user.id})')
         print(self.invite)
+
+
+class General(commands.Cog):
+    def __init__(self, bot: KingOfTheSmiths):
+        self.bot = bot
+
+    @commands.slash_command(name="restart", description="Redémarre le bot.")
+    @commands.has_permissions(administrator=True)
+    async def restart(self, ctx: ApplicationContext):
+        await ctx.respond(f"Redémarrage du bot dans 5s", ephemeral=True)
+        await self.bot.close()
 
 
 class Inscriptions(commands.Cog):
