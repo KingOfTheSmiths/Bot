@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from io import BytesIO  # récupération de PP + bannière
 
+import dotenv
 from discord import Guild, TextChannel
 from discord.commands.context import ApplicationContext
 from discord.ext import commands
@@ -10,7 +11,7 @@ from template import TemplateKOTSmith
 from wows import *
 
 path = '/'.join(__file__.split('/')[:-1]) + '/'
-config = DictPasPareil(casse=True, **dotenv_values(path + '.env'))
+config = DictPasPareil(casse=True, **dotenv.dotenv_values(path + '.env'))
 
 TEAM_PREFIX = '.'
 
