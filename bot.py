@@ -35,6 +35,28 @@ def format_with_prefix(name) -> str:
     return name
 
 
+def logger(func):
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        bot: KingOfTheSmiths = args[0].bot
+        ctx: ApplicationContext = args[1]
+        embed = GBEmbed(title=func.__name__.replace('_', ' ').title(),
+                        description=f"Utilisation de commande par {ctx.user.mention}")
+        message = await bot.logs.send(embed=embed)
+        try:
+            return await func(*args, **kwargs)
+        except Exception as exn:
+            embed.title = type(exn).__name__
+            embed.description = f"```python\n{format_exc()}\n```"
+            embed.add_field(name="User", value=f"{ctx.user} {ctx.user.id}")
+            embed.add_field(name="Arguments",
+                            value=f"**kwargs**:\n```python\n{'\n'.join(f'{k} - {v}' for k, v in kwargs.items())}\n```")
+            await message.reply(f"<@310043973962170370>", embed=embed)
+            await ctx.respond("Une erreur est survenue, le problème est en cours d'investigation...")
+
+    return wrapper
+
+
 class KingOfTheSmiths(TemplateKOTSmith):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -51,10 +73,14 @@ class KingOfTheSmiths(TemplateKOTSmith):
 
         self.guild: Guild = None
         self.log_inscriptions: TextChannel = None
+        self.logs: TextChannel = None
 
     async def on_ready(self):
         self.guild = await self.fetch_guild(1448770816631115790)
         self.log_inscriptions = await self.guild.fetch_channel(1450211194320453692)
+        self.logs = await self.guild.fetch_channel(1456003878200938689)
+
+        message = await self.logs.send("Connection en cours...")
 
         # Nom, PP et Bannière
         kwargs = {'username': self.guild.name}
@@ -76,6 +102,7 @@ class KingOfTheSmiths(TemplateKOTSmith):
 
         print(f'Connecté en tant que {self.user} (ID: {self.user.id})')
         print(self.invite)
+        await message.edit(content="Connecté.")
 
 
 class General(commands.Cog):
@@ -84,8 +111,9 @@ class General(commands.Cog):
 
     @commands.slash_command(name="restart", description="Redémarre le bot.")
     @commands.has_permissions(administrator=True)
+    @logger
     async def restart(self, ctx: ApplicationContext):
-        await ctx.respond(f"Redémarrage du bot dans 5s", ephemeral=True)
+        await ctx.respond("Redémarrage du bot dans 5s", ephemeral=True)
         await self.bot.close()
 
 
@@ -96,6 +124,7 @@ class Inscriptions(commands.Cog):
     @commands.slash_command(name="toggle_inscription",
                             description="(Dés)Active la possibilité de s'inscrire")
     @commands.has_permissions(administrator=True)
+    @logger
     async def toggle_recrutement(self, ctx: ApplicationContext):
         await ctx.defer(ephemeral=True)
         etat = self.bot.teams[self.bot.open_register]
@@ -115,6 +144,7 @@ class Inscriptions(commands.Cog):
     @discord.option("discord3", description="Discord du joueur 3", required=False)
     @discord.option("discord4", description="Discord du joueur 4", required=False)
     @discord.option("discord5", description="Discord du joueur 5", required=False)
+    @logger
     async def inscription(self, ctx: ApplicationContext, nom: str,
                           joueur1: str, joueur2: str, joueur3: str, joueur4: str, joueur5: str,
                           discord2: discord.Member = None, discord3: discord.Member = None,
@@ -157,6 +187,7 @@ class Inscriptions(commands.Cog):
 
     @commands.slash_command(name="list_team", description="Liste les membres d'une équipe.")
     @discord.option("nom", description="Nom de l'équipe", required=True)
+    @logger
     async def list_team(self, ctx: ApplicationContext, nom: str):
         try:
             await ctx.defer(ephemeral=True)
@@ -181,6 +212,7 @@ class Inscriptions(commands.Cog):
         return embed
 
     @commands.slash_command(name="list_teams", description="Liste les équipes inscrites.")
+    @logger
     async def list_teams(self, ctx: ApplicationContext):
         await ctx.defer(ephemeral=True)
         teams = [team for team in self.bot.teams if team != self.bot.open_register]

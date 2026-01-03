@@ -7,3 +7,4 @@ class TemplateKOTSmith(discord.AutoShardedBot):
     guild: Guild = None
     teams: DataBase = None
     log_inscriptions: TextChannel = None
+    logs: TextChannel = None
