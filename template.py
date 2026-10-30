@@ -1,6 +1,5 @@
 import discord
 from GoloBot import Transaction
-from GoloBot.Auxilliaire import DataBase
 from discord import Guild, TextChannel
 
 
