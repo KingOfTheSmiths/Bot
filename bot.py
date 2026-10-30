@@ -63,7 +63,7 @@ class KingOfTheSmiths(TemplateKOTSmith):
         self.bot = self
         self.invite = 'https://discord.com/oauth2/authorize?client_id=1450214424249106534&permissions=8&integration_type=0&scope=bot+applications.commands'
 
-        self.teams = Transaction('teams.json')
+        self.teams = Transaction(JsonStore('teams.json'))
         self.open_register = '__inscriptions__ouvertes__'
         with self.teams as data:
             if self.open_register not in data:
