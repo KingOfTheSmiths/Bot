@@ -2,10 +2,10 @@
 from io import BytesIO  # récupération de PP + bannière
 
 import dotenv
+from GoloBot.UI import *
 from discord import Guild, TextChannel
 from discord.commands.context import ApplicationContext
 from discord.ext import commands
-from GoloBot.UI import *
 
 from template import TemplateKOTSmith
 from wows import *
@@ -63,10 +63,11 @@ class KingOfTheSmiths(TemplateKOTSmith):
         self.bot = self
         self.invite = 'https://discord.com/oauth2/authorize?client_id=1450214424249106534&permissions=8&integration_type=0&scope=bot+applications.commands'
 
-        self.teams = DataBase(path + 'teams.json')
+        self.teams = Transaction('teams.json')
         self.open_register = '__inscriptions__ouvertes__'
-        if self.open_register not in self.teams:
-            self.teams[self.open_register] = False
+        with self.teams as data:
+            if self.open_register not in data:
+                data[self.open_register] = False
 
         self.add_cog(Inscriptions(self))
         self.add_cog(General(self))
